@@ -1,0 +1,558 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>몬티홀 체험 게임</title>
+  <style>
+    :root{
+      --ink:#111827;
+      --muted:rgba(17,24,39,.7);
+      --border:#e5e7eb;
+      --bg:#ffffff;
+      --accent:#ef4444;
+      --win:#10b981;
+      --shadow:0 10px 30px rgba(0,0,0,.08);
+      --font: 20px;
+    }
+    @media (orientation: landscape){
+      :root{ --font: 22px; }
+    }
+    *{ box-sizing:border-box; }
+    body{
+      margin:0;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, Apple Color Emoji, Segoe UI Emoji;
+      font-size: var(--font);
+      color: var(--ink);
+      background: var(--bg);
+    }
+    .page{
+      min-height:100vh;
+      padding: 12px;
+      display:flex;
+      align-items:stretch;
+      justify-content:stretch;
+    }
+    .card{
+      width:100%;
+      max-width: 1200px;
+      margin: 0 auto;
+      border:1px solid var(--border);
+      border-radius: 18px;
+      padding: 16px;
+      box-shadow: var(--shadow);
+      min-height: calc(100vh - 24px);
+      display:flex;
+      flex-direction:column;
+      justify-content:center;
+      gap: 14px;
+      position:relative;
+    }
+    .title{
+      font-size: 1.25em;
+      font-weight: 900;
+      text-align:center;
+      margin: 4px 0;
+    }
+    .sub{
+      text-align:center;
+      opacity:.78;
+      line-height:1.4;
+      max-width: 980px;
+      margin: 0 auto;
+    }
+    .row{
+      display:flex;
+      gap: 12px;
+      flex-wrap:wrap;
+      align-items:center;
+      justify-content:center;
+    }
+    .btn{
+      border:1px solid var(--ink);
+      background: var(--ink);
+      color: #fff;
+      border-radius: 14px;
+      padding: 14px 18px;
+      font-weight: 900;
+      cursor:pointer;
+      min-width: 170px;
+      font-size: 1em;
+    }
+    .btn.ghost{
+      background:#fff;
+      color: var(--ink);
+    }
+    .btn:disabled{
+      opacity:.45;
+      cursor:not-allowed;
+    }
+    input[type="number"]{
+      width: 140px;
+      padding: 12px 12px;
+      border-radius: 14px;
+      border:1px solid var(--border);
+      font-size: 1em;
+    }
+    .doorsWrap{
+      width:100%;
+      display:flex;
+      justify-content:center;
+    }
+    .doors{
+      width:100%;
+      max-width: 1100px;
+      display:grid;
+      gap: 12px;
+      grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    }
+    .door{
+      border:2px solid #cbd5e1;
+      border-radius: 16px;
+      padding: 14px 10px;
+      background: #f8fafc;
+      cursor:pointer;
+      user-select:none;
+      text-align:center;
+      position:relative;
+      min-height: 120px;
+      display:flex;
+      flex-direction:column;
+      justify-content:center;
+      align-items:center;
+      gap: 8px;
+      transition: transform .08s ease, border-color .08s ease, background .08s ease;
+    }
+    .door:hover{ transform: translateY(-1px); }
+    .door.selected{
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(239,68,68,.15);
+      background: #fff;
+    }
+    .door.open{
+      cursor:default;
+      background: #fff;
+    }
+    .door .label{
+      font-weight: 900;
+      opacity:.9;
+    }
+    .door .content{
+      font-size: 1.6em;
+      line-height:1;
+    }
+    .door .small{
+      font-size: 0.8em;
+      opacity:.7;
+    }
+    .badge{
+      display:inline-flex;
+      align-items:center;
+      gap: 10px;
+      border:1px solid var(--border);
+      border-radius: 999px;
+      padding: 10px 14px;
+      font-size: .9em;
+      opacity:.9;
+    }
+    .hr{
+      height:1px;
+      background: var(--border);
+      margin: 2px 0;
+    }
+    table{
+      width:100%;
+      border-collapse: collapse;
+      font-size: 0.95em;
+    }
+    th, td{
+      padding: 12px 10px;
+      border-bottom: 1px solid #f3f4f6;
+      text-align:left;
+    }
+    th{
+      border-bottom: 1px solid var(--border);
+      font-weight: 900;
+    }
+    .footer{
+      text-align:center;
+      font-size: .8em;
+      opacity: .65;
+    }
+    .green{ color: var(--win); font-weight: 900; }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="card">
+      <div id="content"></div>
+      <div class="footer" id="footer"></div>
+    </div>
+  </div>
+
+<script>
+(function(){
+  // phases: setup -> choose -> decision -> revealChoice -> revealAll -> stats
+  const state = {
+    phase: "setup",
+    nDoors: 3,
+    prizeDoor: null,        // 0..n-1
+    selectedDoor: null,     // 0..n-1
+    opened: new Set(),      // opened goat doors by host (and later all)
+    decision: null,         // "switch" | "stay"
+    win: null,              // true/false after revealChoice
+    // cumulative stats (across many plays within same session until reset)
+    stats: {
+      switchWins: 0,
+      switchPlays: 0,
+      stayWins: 0,
+      stayPlays: 0
+    }
+  };
+
+  const $content = document.getElementById("content");
+  const $footer = document.getElementById("footer");
+
+  const DIAMOND = "💎";
+  const GOAT = "🐐";
+
+  function clamp(n, min){ return Math.max(min, n); }
+
+  function resetToSetup(){
+    state.phase = "setup";
+    state.nDoors = 3;
+    state.prizeDoor = null;
+    state.selectedDoor = null;
+    state.opened = new Set();
+    state.decision = null;
+    state.win = null;
+    // stats 유지(원하면 초기화 버튼도 추가 가능)
+    render();
+  }
+
+  function fullReset(){
+    state.stats = { switchWins:0, switchPlays:0, stayWins:0, stayPlays:0 };
+    resetToSetup();
+  }
+
+  function startGame(){
+    const n = clamp(parseInt(state.nDoors, 10) || 3, 3);
+    state.nDoors = n;
+    state.prizeDoor = Math.floor(Math.random() * n); // 고정
+    state.selectedDoor = null;
+    state.opened = new Set();
+    state.decision = null;
+    state.win = null;
+    state.phase = "choose";
+    render();
+  }
+
+  function doorCountToOpenByHost(){
+    return state.nDoors - 2; // 요청: 선택 후 (n-2)개 염소문 오픈
+  }
+
+  function hostOpenGoatDoors(){
+    // open (n-2) goat doors excluding selectedDoor and prizeDoor
+    const need = doorCountToOpenByHost();
+    const candidates = [];
+    for(let i=0;i<state.nDoors;i++){
+      if(i === state.selectedDoor) continue;
+      if(i === state.prizeDoor) continue; // 다이아 문은 진행자가 열지 않음
+      candidates.push(i);
+    }
+    shuffle(candidates);
+    for(let i=0;i<need;i++){
+      state.opened.add(candidates[i]);
+    }
+  }
+
+  function chooseDoor(i){
+    if(state.phase !== "choose") return;
+    if(state.selectedDoor !== null) return; // 한 번만 선택
+    state.selectedDoor = i;
+    hostOpenGoatDoors();
+    state.phase = "decision";
+    render();
+  }
+
+  function decideSwitch(){
+    if(state.phase !== "decision") return;
+    state.decision = "switch";
+    // 닫힌 문 2개만 남아야 함: selectedDoor + otherClosed
+    const other = getOtherClosedDoor();
+    if(other === null) return;
+    state.selectedDoor = other; // 바꿈
+    revealSelected();
+  }
+
+  function decideStay(){
+    if(state.phase !== "decision") return;
+    state.decision = "stay";
+    revealSelected();
+  }
+
+  function revealSelected(){
+    // 선택한 문을 열고 결과 확인
+    state.phase = "revealChoice";
+    state.win = (state.selectedDoor === state.prizeDoor);
+
+    // 통계 누적
+    if(state.decision === "switch"){
+      state.stats.switchPlays += 1;
+      if(state.win) state.stats.switchWins += 1;
+    } else if(state.decision === "stay"){
+      state.stats.stayPlays += 1;
+      if(state.win) state.stats.stayWins += 1;
+    }
+
+    // 선택한 문은 열린 것으로 표시(단, 표시용으로 별도 set에 넣지 않고 렌더에서 처리)
+    render();
+  }
+
+  function revealAll(){
+    // 나머지 문 모두 열기
+    for(let i=0;i<state.nDoors;i++){
+      state.opened.add(i);
+    }
+    state.phase = "revealAll";
+    render();
+  }
+
+  function goStats(){
+    state.phase = "stats";
+    render();
+  }
+
+  function backToSetup(){
+    resetToSetup();
+  }
+
+  function getOtherClosedDoor(){
+    // after host opens, only two doors remain closed: selectedDoor and one more
+    const closed = [];
+    for(let i=0;i<state.nDoors;i++){
+      const isOpenedByHost = state.opened.has(i);
+      const isSelected = (i === state.selectedDoor);
+      // In decision phase, selected door is still closed
+      if(!isOpenedByHost) closed.push(i);
+    }
+    // closed should have 2 doors
+    if(closed.length < 2) return null;
+    const other = closed.find(x => x !== state.selectedDoor);
+    return (other === undefined ? null : other);
+  }
+
+  function shuffle(arr){
+    for(let i=arr.length-1;i>0;i--){
+      const j = Math.floor(Math.random()*(i+1));
+      [arr[i],arr[j]] = [arr[j],arr[i]];
+    }
+  }
+
+  // UI helpers
+  function h(tag, attrs={}, children=[]){
+    const el = document.createElement(tag);
+    for(const k in attrs){
+      if(k === "class") el.className = attrs[k];
+      else if(k === "html") el.innerHTML = attrs[k];
+      else if(k.startsWith("on") && typeof attrs[k] === "function"){
+        el.addEventListener(k.substring(2).toLowerCase(), attrs[k]);
+      } else {
+        el.setAttribute(k, attrs[k]);
+      }
+    }
+    (Array.isArray(children) ? children : [children]).forEach(ch=>{
+      if(ch === null || ch === undefined) return;
+      if(typeof ch === "string") el.appendChild(document.createTextNode(ch));
+      else el.appendChild(ch);
+    });
+    return el;
+  }
+
+  function renderDoors({showAll=false, showSelectedResult=false}){
+    const grid = h("div",{class:"doors"});
+    for(let i=0;i<state.nDoors;i++){
+      const isSelected = (i === state.selectedDoor);
+      const openedByHostOrAll = state.opened.has(i);
+      const shouldShowOpen =
+        showAll ? true :
+        (openedByHostOrAll) ? true :
+        (showSelectedResult && isSelected) ? true : false;
+
+      const content = (() => {
+        if(!shouldShowOpen) return "";
+        return (i === state.prizeDoor) ? DIAMOND : GOAT;
+      })();
+
+      const small = (() => {
+        if(!shouldShowOpen) return "";
+        return (i === state.prizeDoor) ? "다이아몬드" : "염소";
+      })();
+
+      const doorEl = h("div",{
+        class: "door" + (isSelected ? " selected" : "") + (shouldShowOpen ? " open" : ""),
+        onClick: () => chooseDoor(i)
+      },[
+        h("div",{class:"label"},[`문 ${i+1}`]),
+        h("div",{class:"content"},[content]),
+        h("div",{class:"small"},[small])
+      ]);
+
+      // 선택은 choose 단계에서만 가능
+      if(state.phase !== "choose") doorEl.style.cursor = "default";
+      if(state.phase !== "choose") doorEl.onclick = null;
+
+      grid.appendChild(doorEl);
+    }
+    return h("div",{class:"doorsWrap"},[grid]);
+  }
+
+  function pct(win, plays){
+    if(plays <= 0) return "—";
+    return ( (win/plays)*100 ).toFixed(1) + "%";
+  }
+
+  function render(){
+    $content.innerHTML = "";
+    $footer.textContent = "";
+
+    if(state.phase === "setup"){
+      $content.appendChild(h("div",{class:"title"},["몬티홀 체험 게임"]));
+      $content.appendChild(h("div",{class:"sub"},[
+        "문의 개수(3개 이상)를 설정하고 시작하세요. 한 문을 선택하면 진행자가 염소 문을 ",
+        h("b",{},["(문 개수 - 2)개"]),
+        " 열어 두 문만 남깁니다. 그 후 ",
+        h("b",{},["바꿀지/유지할지"]),
+        " 선택하세요."
+      ]));
+
+      const row = h("div",{class:"row"});
+      row.appendChild(h("div",{style:"font-weight:900;"},["문의 개수"]));
+      const input = h("input",{type:"number",min:"3",value:String(state.nDoors)});
+      input.addEventListener("input",(e)=>{
+        state.nDoors = clamp(parseInt(e.target.value||"3",10), 3);
+      });
+      row.appendChild(input);
+      row.appendChild(h("button",{class:"btn", onClick:startGame},["게임 시작"]));
+      row.appendChild(h("button",{class:"btn ghost", onClick:fullReset},["통계 초기화"]));
+      $content.appendChild(row);
+
+      $content.appendChild(h("div",{class:"hr"}));
+      $content.appendChild(h("div",{class:"sub"},[
+        "통계는 이 브라우저에서 계속 누적됩니다. (게임을 여러 번 반복해 보세요!)"
+      ]));
+      return;
+    }
+
+    // 공통 상단 배지
+    const badge = h("div",{class:"row"},[
+      h("div",{class:"badge"},[`문의 개수: `, h("b",{},[String(state.nDoors)])]),
+      h("div",{class:"badge"},[`이번 게임 다이아 위치: `, h("b",{},["(비공개)"])])
+    ]);
+    $content.appendChild(badge);
+
+    if(state.phase === "choose"){
+      $content.appendChild(h("div",{class:"title"},["문을 하나 선택하세요"]));
+      $content.appendChild(h("div",{class:"sub"},[
+        "선택한 문은 빨간 테두리로 표시됩니다."
+      ]));
+      $content.appendChild(renderDoors({showAll:false, showSelectedResult:false}));
+      $footer.textContent = "문을 선택하면 진행자가 염소 문을 자동으로 열어줍니다.";
+      return;
+    }
+
+    if(state.phase === "decision"){
+      $content.appendChild(h("div",{class:"title"},["선택의 순간!"]));
+      $content.appendChild(h("div",{class:"sub"},[
+        `진행자가 염소 문을 ${doorCountToOpenByHost()}개 열었습니다. 이제 닫힌 문은 2개(내 선택 + 다른 1개)만 남습니다.`
+      ]));
+      $content.appendChild(renderDoors({showAll:false, showSelectedResult:false}));
+
+      $content.appendChild(h("div",{class:"row"},[
+        h("button",{class:"btn", onClick:decideSwitch},["바꾼다"]),
+        h("button",{class:"btn ghost", onClick:decideStay},["바꾸지 않는다"])
+      ]));
+      $footer.textContent = "결정 후, 선택한 문이 열리고 결과(💎/🐐)가 표시됩니다.";
+      return;
+    }
+
+    if(state.phase === "revealChoice"){
+      const msg = state.win ? "성공! 다이아몬드 💎" : "아쉽게도 염소 🐐";
+      $content.appendChild(h("div",{class:"title"},[
+        "결과: ", h("span",{class: state.win ? "green" : ""},[msg])
+      ]));
+      $content.appendChild(h("div",{class:"sub"},[
+        `당신의 선택: `,
+        h("b",{},[(state.decision === "switch") ? "바꾼다" : "바꾸지 않는다"]),
+        ` / 선택한 문: `,
+        h("b",{},[`문 ${state.selectedDoor+1}`])
+      ]));
+      $content.appendChild(renderDoors({showAll:false, showSelectedResult:true}));
+
+      $content.appendChild(h("div",{class:"row"},[
+        h("button",{class:"btn", onClick:revealAll},["다음 (모든 문 공개)"])
+      ]));
+      $footer.textContent = "다음 버튼을 누르면 남은 문도 모두 열립니다.";
+      return;
+    }
+
+    if(state.phase === "revealAll"){
+      $content.appendChild(h("div",{class:"title"},["전체 공개"]));
+      $content.appendChild(h("div",{class:"sub"},[
+        "모든 문 뒤의 내용(💎/🐐)을 확인하세요."
+      ]));
+      $content.appendChild(renderDoors({showAll:true, showSelectedResult:true}));
+
+      $content.appendChild(h("div",{class:"row"},[
+        h("button",{class:"btn", onClick:goStats},["다음 (통계 보기)"])
+      ]));
+      $footer.textContent = "통계 화면에서 바꿈/유지에 따른 승리 횟수와 승률을 확인합니다.";
+      return;
+    }
+
+    if(state.phase === "stats"){
+      $content.appendChild(h("div",{class:"title"},["통계 요약"]));
+      const s = state.stats;
+
+      const table = h("table");
+      table.appendChild(h("thead",{},[
+        h("tr",{},[
+          h("th",{},["전략"]),
+          h("th",{},["다이아(승리) 횟수"]),
+          h("th",{},["시도 횟수"]),
+          h("th",{},["승리 확률"])
+        ])
+      ]));
+
+      table.appendChild(h("tbody",{},[
+        h("tr",{},[
+          h("td",{style:"font-weight:900;"},["바꾼다"]),
+          h("td",{},[String(s.switchWins)]),
+          h("td",{},[String(s.switchPlays)]),
+          h("td",{},[pct(s.switchWins, s.switchPlays)])
+        ]),
+        h("tr",{},[
+          h("td",{style:"font-weight:900;"},["바꾸지 않는다"]),
+          h("td",{},[String(s.stayWins)]),
+          h("td",{},[String(s.stayPlays)]),
+          h("td",{},[pct(s.stayWins, s.stayPlays)])
+        ])
+      ]));
+
+      $content.appendChild(table);
+
+      $content.appendChild(h("div",{class:"row", style:"margin-top:10px;"},[
+        h("button",{class:"btn", onClick:startGame},["한 판 더 하기"]),
+        h("button",{class:"btn ghost", onClick:backToSetup},["처음으로"])
+      ]));
+
+      $footer.textContent = "Tip: 문 개수를 늘려도 규칙은 같아요(선택 후 n-2개의 염소 문이 열립니다).";
+      return;
+    }
+  }
+
+  render();
+})();
+</script>
+</body>
+</html>
